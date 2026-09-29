@@ -19,24 +19,23 @@ function fromBase64Url(str) {
 function buildPassPayload(data) {
   if (!data || !data.token) return null
 
-  const payload = {
-    t: data.token,
-    p: data.passNumber,
-    n: data.employeeName,
-    e: data.employeeCode,
-    d: data.department,
-    r: data.routeNumber,
-    rn: data.routeName,
-    b: data.busNumber,
-    s: data.shiftName,
-    pu: data.pickupName,
-    dr: data.dropName,
-    vf: data.validFrom,
-    vt: data.validTo,
-    ts: new Date().toISOString(),
-  }
+  const lines = [
+    'EMPLOYEE BUS PASS',
+    '-----------------',
+    `Pass No  : ${data.passNumber || '—'}`,
+    `Employee : ${data.employeeName || '—'}`,
+    `Emp ID   : ${data.employeeCode || '—'}`,
+    `Dept     : ${data.department || '—'}`,
+    `Route    : ${[data.routeNumber, data.routeName].filter(Boolean).join(' - ') || '—'}`,
+    `Bus      : ${data.busNumber || '—'}`,
+    `Shift    : ${data.shiftName || '—'}`,
+    `Pickup   : ${data.pickupName || '—'}`,
+    `Drop     : ${data.dropName || '—'}`,
+    `Valid    : ${data.validFrom || '—'} to ${data.validTo || '—'}`,
+    `Token    : ${data.token}`,
+  ]
 
-  return `BUSPASS:v1:${toBase64Url(JSON.stringify(payload))}`
+  return lines.join('\n')
 }
 
 const transporter = nodemailer.createTransport({

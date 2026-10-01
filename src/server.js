@@ -13,6 +13,7 @@ const masterRoutes =
   require("./routes/masterRoutes");
 const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
 
 // =========================
 // Middleware
@@ -29,6 +30,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use('/api', apiLimiter);
+app.use('/api/auth', authLimiter);
 
 app.use("/api/auth", authRoutes);
 app.use(

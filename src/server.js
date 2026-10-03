@@ -13,6 +13,7 @@ const masterRoutes =
   require("./routes/masterRoutes");
 const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const alertRoutes = require('./routes/alertRoutes');
 const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
 
 // =========================
@@ -45,6 +46,7 @@ app.use(
 );
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/alerts', alertRoutes);
 // =========================
 // Test Routes
 // =========================

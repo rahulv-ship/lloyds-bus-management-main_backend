@@ -13,6 +13,7 @@ const {
   Route,
   Shift,
   Stop,
+  Alert,
 } = require("../models");
 
 // =====================================================
@@ -20,6 +21,26 @@ const {
 // =====================================================
 
 const BUS_CAPACITY = 52;
+
+// =====================================================
+// Alert helpers
+// =====================================================
+
+const emitAlert = async ({ type, category, severity, title, message, payload, employee_code }) => {
+  try {
+    await Alert.create({
+      type,
+      category: category || 'BOOKING',
+      severity: severity || 'INFO',
+      title,
+      message,
+      payload: payload ? JSON.stringify(payload) : null,
+      employee_code: employee_code || null,
+    });
+  } catch (error) {
+    console.error('Failed to create alert:', error);
+  }
+};
 
 // =====================================================
 // Generators
@@ -191,6 +212,47 @@ const createApplication = async (req, res) => {
     }
 
     // -------------------------------------------------
+    // Unauthorized travel detection
+    // -------------------------------------------------
+
+    const overlappingBooking = await BusPassBookingDate.findOne({
+      where: {
+        booking_date: { [Op.in]: uniqueBookingDates },
+        status: 'BOOKED',
+      },
+      include: [
+        {
+          model: BusPassApplication,
+          as: 'application',
+          required: true,
+          where: {
+            employee_id: employeeId,
+            status: { [Op.in]: ['PENDING_APPROVAL', 'APPROVED'] },
+            bus_id: { [Op.ne]: bus_id },
+          },
+        },
+      ],
+    });
+
+    if (overlappingBooking) {
+      await emitAlert({
+        type: 'UNAUTHORIZED_TRAVEL',
+        category: 'SECURITY',
+        severity: 'CRITICAL',
+        title: 'Unauthorized travel detected',
+        message: `Employee ${employeeId} attempted to book bus ${bus_id} on ${overlappingBooking.booking_date} while already having an approved booking on bus ${overlappingBooking.application.bus_id}.`,
+        payload: {
+          employee_id: employeeId,
+          new_bus_id: bus_id,
+          existing_bus_id: overlappingBooking.application.bus_id,
+          booking_date: overlappingBooking.booking_date,
+          existing_application_id: overlappingBooking.application.id,
+        },
+        employee_code: employeeId,
+      });
+    }
+
+    // -------------------------------------------------
     // Validate route
     // -------------------------------------------------
 
@@ -338,6 +400,20 @@ const createApplication = async (req, res) => {
       });
 
     if (existingApplication) {
+      await emitAlert({
+        type: 'MULTIPLE_BOOKING',
+        category: 'BOOKING',
+        severity: 'WARNING',
+        title: 'Multiple booking attempt detected',
+        message: `Employee ${employeeId} attempted to book another bus while an existing application (${existingApplication.application_number}) is still active.`,
+        payload: {
+          employee_id: employeeId,
+          existing_application_number: existingApplication.application_number,
+          existing_status: existingApplication.status,
+        },
+        employee_code: employeeId,
+      });
+
       return res.status(409).json({
         success: false,
         message:
@@ -401,6 +477,39 @@ const createApplication = async (req, res) => {
 
       if (remaining <= 0) {
         fullDates.push(bookingDate);
+
+        await emitAlert({
+          type: 'BUS_FULLY_BOOKED',
+          category: 'CAPACITY',
+          severity: 'CRITICAL',
+          title: 'Bus is fully booked',
+          message: `Bus ${bus_id} is fully booked on ${bookingDate}. No seats are available.`,
+          payload: {
+            bus_id,
+            route_id,
+            shift_id,
+            booking_date: bookingDate,
+            booked: bookedCount,
+            capacity: BUS_CAPACITY,
+          },
+        });
+      } else if (bookedCount / BUS_CAPACITY >= 0.85) {
+        await emitAlert({
+          type: 'HIGH_OCCUPANCY',
+          category: 'CAPACITY',
+          severity: 'WARNING',
+          title: 'Occupancy exceeds threshold',
+          message: `Bus ${bus_id} has reached ${Math.round((bookedCount / BUS_CAPACITY) * 100)}% occupancy on ${bookingDate}.`,
+          payload: {
+            bus_id,
+            route_id,
+            shift_id,
+            booking_date: bookingDate,
+            booked: bookedCount,
+            capacity: BUS_CAPACITY,
+            percentage: Math.round((bookedCount / BUS_CAPACITY) * 100),
+          },
+        });
       }
     }
 
@@ -724,6 +833,25 @@ const approveApplication = async (
     }
 
     if (capacityConflicts.length > 0) {
+      for (const conflict of capacityConflicts) {
+        await emitAlert({
+          type: 'BUS_FULLY_BOOKED',
+          category: 'CAPACITY',
+          severity: 'CRITICAL',
+          title: 'Bus is fully booked',
+          message: `Bus ${application.bus_id} is fully booked on ${conflict.date}. Approval blocked.`,
+          payload: {
+            bus_id: application.bus_id,
+            route_id: application.route_id,
+            shift_id: application.shift_id,
+            booking_date: conflict.date,
+            booked: conflict.booked,
+            capacity: BUS_CAPACITY,
+            application_id: application.id,
+          },
+        });
+      }
+
       return res.status(409).json({
         success: false,
 
@@ -734,6 +862,58 @@ const approveApplication = async (
 
         conflicts: capacityConflicts,
       });
+    }
+
+    // -------------------------------------------------
+    // Check occupancy threshold after approval
+    // -------------------------------------------------
+
+    for (const bookingDateRecord of bookingDates) {
+      const bookingDate = bookingDateRecord.booking_date;
+
+      const usedSeats = await BusPassBookingDate.count({
+        where: {
+          booking_date: bookingDate,
+          status: "BOOKED",
+        },
+        include: [
+          {
+            model: BusPassApplication,
+            as: "application",
+            required: true,
+            where: {
+              bus_id: application.bus_id,
+              route_id: application.route_id,
+              shift_id: application.shift_id,
+              status: {
+                [Op.in]: [
+                  "PENDING_APPROVAL",
+                  "APPROVED",
+                ],
+              },
+            },
+          },
+        ],
+      });
+
+      if (usedSeats / BUS_CAPACITY >= 0.85) {
+        await emitAlert({
+          type: 'HIGH_OCCUPANCY',
+          category: 'CAPACITY',
+          severity: 'WARNING',
+          title: 'Occupancy exceeds threshold',
+          message: `Bus ${application.bus_id} has reached ${Math.round((usedSeats / BUS_CAPACITY) * 100)}% occupancy on ${bookingDate}.`,
+          payload: {
+            bus_id: application.bus_id,
+            route_id: application.route_id,
+            shift_id: application.shift_id,
+            booking_date: bookingDate,
+            booked: usedSeats,
+            capacity: BUS_CAPACITY,
+            percentage: Math.round((usedSeats / BUS_CAPACITY) * 100),
+          },
+        });
+      }
     }
 
     // -------------------------------------------------

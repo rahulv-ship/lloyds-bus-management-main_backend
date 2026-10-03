@@ -13,6 +13,7 @@ const BusPassApplication = require("./BusPassApplication");
 const BusRouteStop = require("./BusRouteStop");
 const BusPassBookingDate = require("./BusPassBookingDate");
 const Notification = require("./Notification");
+const Alert = require("./Alert");
 
 // =========================
 // Employee <-> User
@@ -306,4 +307,5 @@ module.exports = {
   BusPassApplication,
   BusPassBookingDate,
   Notification,
+  Alert,
 };

@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const {
   Bus, Route, Stop, Shift, Vendor, Driver, Conductor, BusRoute,
-  BusRouteStop, BusPassApplication, BusPassBookingDate, Employee, Notification,
+  BusRouteStop, BusPassApplication, BusPassBookingDate, Employee, Notification, Alert,
 } = require('../models');
 
 const MASTER_MODELS = {
@@ -161,6 +161,39 @@ const getDashboard = async (_req, res) => {
       if (item.booked > 0 && percent <= 25) return [{ tone: 'info', message: `${item.bus_number} has significant unused capacity (${item.available} seats).` }];
       return [];
     });
+
+    for (const item of utilization) {
+      const percent = item.capacity ? (item.booked / item.capacity) * 100 : 0;
+      if (item.available === 0) {
+        await Alert.create({
+          type: 'BUS_FULLY_BOOKED',
+          category: 'CAPACITY',
+          severity: 'CRITICAL',
+          title: 'Bus is fully booked',
+          message: `${item.bus_number} is fully booked on all scheduled services.`,
+          payload: JSON.stringify({ bus_route_id: item.bus_route_id, bus_number: item.bus_number, route_number: item.route_number, shift_name: item.shift_name, booked: item.booked, capacity: item.capacity }),
+        });
+      } else if (percent >= 85) {
+        await Alert.create({
+          type: 'HIGH_OCCUPANCY',
+          category: 'CAPACITY',
+          severity: 'WARNING',
+          title: 'Occupancy exceeds threshold',
+          message: `${item.bus_number} has reached ${Math.round(percent)}% occupancy for ${item.shift_name}.`,
+          payload: JSON.stringify({ bus_route_id: item.bus_route_id, bus_number: item.bus_number, route_number: item.route_number, shift_name: item.shift_name, booked: item.booked, capacity: item.capacity, percentage: Math.round(percent) }),
+        });
+      } else if (item.booked > 0 && percent <= 25) {
+        await Alert.create({
+          type: 'UNUSED_CAPACITY',
+          category: 'CAPACITY',
+          severity: 'INFO',
+          title: 'Significant unused capacity',
+          message: `${item.bus_number} has only ${Math.round(percent)}% occupancy with ${item.available} seats available.`,
+          payload: JSON.stringify({ bus_route_id: item.bus_route_id, bus_number: item.bus_number, route_number: item.route_number, shift_name: item.shift_name, booked: item.booked, capacity: item.capacity, available: item.available, percentage: Math.round(percent) }),
+        });
+      }
+    }
+
     return res.json({ success: true, data: { stats: { buses, activeBuses, routes, activeRoutes, pending }, utilization, alerts } });
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 };

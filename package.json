@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "import:routes": "node src/scripts/importBusRoutes.js",
     "migrate:bus-master": "node src/scripts/addBusMasterFields.js",
-    "seed:shift-routes": "node src/scripts/seedShiftRoutes.js"
+    "seed:shift-routes": "node src/scripts/seedShiftRoutes.js",
+    "seed:alerts": "node src/scripts/seedAlerts.js"
   },
   "keywords": [],
   "author": "",

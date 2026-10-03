@@ -1,8 +1,9 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
-const { User, Employee } = require("../models");
+const { User, Employee, BusPassApplication, Bus, Route, Shift, Stop } = require("../models");
 const { fetchHonoHrEmployee } = require('../services/honoHrEmployeeService');
+const { sendQRCodeEmail } = require('../services/emailService');
 
 // =====================================================
 // ADMIN LOGIN
@@ -183,6 +184,53 @@ const employeeSsoLogin = async (req, res) => {
         ...profile,
         status: "ACTIVE",
       });
+    }
+
+    // =================================================
+    // SEND QR EMAIL IF EMPLOYEE HAS AN APPROVED PASS
+    // =================================================
+
+    if (employee?.email) {
+      try {
+        const approvedApplication = await BusPassApplication.findOne({
+          where: {
+            employee_id: employee.employee_code,
+            status: "APPROVED",
+          },
+          include: [
+            { model: Bus, as: "bus", required: true },
+            { model: Route, as: "route", required: true },
+            { model: Shift, as: "shift", required: true },
+            { model: Stop, as: "pickupStop", required: true },
+            { model: Stop, as: "dropStop", required: true },
+          ],
+        });
+
+        if (approvedApplication) {
+          const pass = {
+            token: approvedApplication.qr_token,
+            passNumber: approvedApplication.pass_number,
+            employeeName: employee.employee_name,
+            employeeCode: employee.employee_code,
+            department: employee.department,
+            routeNumber: approvedApplication.route?.route_number,
+            routeName: approvedApplication.route?.route_name,
+            busNumber: approvedApplication.bus?.bus_number,
+            shiftName: approvedApplication.shift?.shift_name,
+            pickupName: approvedApplication.pickupStop?.stop_name,
+            dropName: approvedApplication.dropStop?.stop_name,
+            validFrom: approvedApplication.pass_valid_from,
+            validTo: approvedApplication.pass_valid_to,
+          };
+
+          await sendQRCodeEmail({
+            to: employee.email,
+            pass,
+          });
+        }
+      } catch (emailError) {
+        console.error("Failed to send QR email on login:", emailError);
+      }
     }
 
     // =================================================

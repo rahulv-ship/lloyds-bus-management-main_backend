@@ -15,6 +15,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const alertRoutes = require('./routes/alertRoutes');
 const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
+const { startWheelseyeCron } = require('./services/gpsService');
 
 // =========================
 // Middleware
@@ -79,6 +80,11 @@ const startServer = async () => {
 await sequelize.sync();
 
 console.log("✅ Database tables synchronized");
+
+const gpsCron = startWheelseyeCron(30000);
+
+process.on('SIGTERM', () => clearInterval(gpsCron));
+process.on('SIGINT', () => clearInterval(gpsCron));
 
     app.listen(PORT, () => {
       console.log("========================================");

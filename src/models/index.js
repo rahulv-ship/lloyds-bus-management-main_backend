@@ -4,6 +4,7 @@ const Vendor = require("./Vendor");
 const Driver = require("./Driver");
 const Conductor = require("./Conductor");
 const Bus = require("./Bus");
+const BusGpsTracking = require("./BusGpsTracking");
 const Route = require("./Route");
 const Stop = require("./Stop");
 const Shift = require("./Shift");
@@ -298,6 +299,7 @@ module.exports = {
   Driver,
   Conductor,
   Bus,
+  BusGpsTracking,
   Route,
   Stop,
   Shift,
